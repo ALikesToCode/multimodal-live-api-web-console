@@ -1,21 +1,28 @@
+// Base button styles
 .action-button {
+  // Layout
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 48px;
+  height: 48px;
+  
+  // Visual styling
   background: var(--Neutral-20);
   color: var(--Neutral-60);
+  border-radius: 18px;
+  border: 1px solid transparent;
+  
+  // Typography
   font-size: 1.25rem;
   line-height: 1.75rem;
   text-transform: lowercase;
+  
+  // Interaction
   cursor: pointer;
-  animation: opacity-pulse 3s ease-in infinite;
-  transition: all 0.2s ease-in-out;
-  width: 48px;
-  height: 48px;
-  border-radius: 18px;
-  border: 1px solid rgba(0, 0, 0, 0);
   user-select: none;
-  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  animation: opacity-pulse 3s ease-in infinite;
 
   &:focus {
     border: 2px solid var(--Neutral-20);
@@ -27,12 +34,12 @@
     border: 1px solid var(--Neutral-20);
   }
 
-  .no-action {
+  &.no-action {
     pointer-events: none;
   }
 
   &:hover {
-    background: rgba(0, 0, 0, 0);
+    background: transparent;
     border: 1px solid var(--Neutral-20);
   }
 
@@ -46,24 +53,19 @@
   }
 }
 
+// Custom property for volume animation
 @property --volume {
   syntax: "length";
   inherit: false;
   initial-value: 0px;
 }
 
-.disabled .mic-button,
-.mic-button.disabled {
-  &:before {
-    background: rgba(0, 0, 0, 0);
-  }
-}
-
+// Microphone button styles
 .mic-button {
   position: relative;
   background-color: var(--accent-red);
-  z-index: 1;
   color: black;
+  z-index: 1;
   transition: all 0.2s ease-in;
 
   &:focus {
@@ -75,22 +77,30 @@
     background-color: var(--Red-400);
   }
 
+  // Pulsing animation element
   &:before {
+    content: "";
     position: absolute;
     z-index: -1;
     top: calc(var(--volume) * -1);
     left: calc(var(--volume) * -1);
-    display: block;
-    content: "";
-    opacity: 0.35;
-    background-color: var(--Red-500);
     width: calc(100% + var(--volume) * 2);
     height: calc(100% + var(--volume) * 2);
+    background-color: var(--Red-500);
     border-radius: 24px;
+    opacity: 0.35;
     transition: all 0.02s ease-in-out;
+  }
+
+  &.disabled,
+  .disabled & {
+    &:before {
+      background: transparent;
+    }
   }
 }
 
+// Connection toggle button
 .connect-toggle {
   &:focus {
     border: 2px solid var(--Neutral-20);
@@ -103,6 +113,7 @@
   }
 }
 
+// Control tray container
 .control-tray {
   position: absolute;
   bottom: 0;
@@ -114,13 +125,15 @@
   gap: 8px;
   padding-bottom: 18px;
 
+  // Disabled state styles
   .disabled .action-button,
   .action-button.disabled {
-    background: rgba(0, 0, 0, 0);
-    border: 1px solid var(--Neutral-30, #404547);
+    background: transparent;
+    border: 1px solid var(--Neutral-30);
     color: var(--Neutral-30);
   }
 
+  // Connection container
   .connection-container {
     display: flex;
     flex-direction: column;
@@ -141,27 +154,25 @@
       user-select: none;
     }
 
-    &:not(.connected) {
-      .text-indicator {
-        opacity: 0;
-      }
+    &:not(.connected) .text-indicator {
+      opacity: 0;
     }
   }
 }
 
+// Actions navigation
 .actions-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
   background: var(--Neutral-5);
   border: 1px solid var(--Neutral-30);
   border-radius: 27px;
-  display: inline-flex;
-  gap: 12px;
-  align-items: center;
   overflow: clip;
-  padding: 10px;
-
   transition: all 0.6s ease-in;
 
-  &>* {
+  & > * {
     display: flex;
     align-items: center;
     flex-direction: column;
@@ -169,16 +180,12 @@
   }
 }
 
+// Opacity pulse animation
 @keyframes opacity-pulse {
-  0% {
+  0%, 100% {
     opacity: 0.9;
   }
-
   50% {
     opacity: 1;
-  }
-
-  100% {
-    opacity: 0.9;
   }
 }

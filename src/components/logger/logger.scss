@@ -4,91 +4,125 @@
   max-width: 100%;
   display: block;
 
+  // Improved list layout with better spacing and readability
   .logger-list {
-    padding: 0 0px 0 25px;
+    padding: 0 0 0 25px; // Simplified padding
     overflow-x: hidden;
     width: calc(100% - 45px);
   }
 
+  // Consistent color scheme for user/model interactions
   .user h4 {
-    color: var(--Green-500);
+    color: var(--Green-500); // User messages in green for clarity
   }
 
   .model h4 {
-    color: var(--Blue-500);
+    color: var(--Blue-500); // Model responses in blue for distinction
   }
 
+  // Enhanced rich log styling
   .rich-log {
     display: flex;
-    justify-content: center;
-    gap: 4px;
+    flex-direction: column; // Better vertical organization
+    gap: 12px; // Increased spacing for better readability
 
     pre {
       overflow-x: auto;
+      max-width: 100%; // Prevent horizontal overflow
+      background: var(--Neutral-5);
+      padding: 8px;
+      border-radius: 4px;
     }
-
-    display: block;
 
     h4 {
       font-size: 14px;
       text-transform: uppercase;
       padding: 8px 0;
       margin: 0;
+      font-weight: 600; // Better visual hierarchy
     }
 
     h5 {
       margin: 0;
       padding-bottom: 8px;
       border-bottom: 1px solid var(--Neutral-20);
+      font-size: 13px; // Better size hierarchy
     }
 
     .part {
       background: var(--Neutral-5);
-      padding: 14px;
-      margin-bottom: 4px;
+      padding: 16px; // Slightly more padding
+      margin-bottom: 8px; // Increased spacing
       color: var(--Neutral-90);
       border-radius: 8px;
+      transition: background-color 0.2s ease; // Smooth hover effect
+
+      &:hover {
+        background: var(--Neutral-10); // Subtle interaction feedback
+      }
     }
   }
 
+  // Improved plain log styling
   .plain-log {
-    &>* {
-      padding-right: 4px;
+    & > * {
+      padding-right: 8px; // Increased spacing
+      line-height: 1.4; // Better readability
     }
   }
 
-  .inline-code:not(:last-child) {
-    font-style: italic;
+  // Better inline code formatting
+  .inline-code {
+    font-family: 'Space Mono', monospace;
+    background: var(--Neutral-5);
+    padding: 2px 4px;
+    border-radius: 4px;
 
-    &::after {
-      content: ", ";
+    &:not(:last-child) {
+      font-style: italic;
+
+      &::after {
+        content: ", ";
+        color: var(--Neutral-50);
+      }
     }
   }
 }
 
+// Enhanced list item styling
 .logger li {
-  display: block;
+  display: flex; // Better alignment
+  align-items: center;
+  gap: 8px;
   padding: 8px 0;
-  color: var(--Neutral-50, #707577);
-  font-family: "Space Mono";
+  color: var(--Neutral-50);
+  font-family: "Space Mono", monospace;
   font-size: 14px;
-  font-style: normal;
-  font-weight: 400;
-  line-height: normal;
+  line-height: 1.4;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: var(--Neutral-5);
+  }
 }
 
+// Improved timestamp styling
 .logger li .timestamp {
   width: 70px;
-  flex-grow: 0;
   flex-shrink: 0;
   color: var(--Neutral-50);
+  font-size: 12px; // Smaller size for better hierarchy
 }
 
+// Enhanced source styling
 .logger li .source {
   flex-shrink: 0;
-  font-weight: bold;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12px;
 }
 
+// Consistent color coding for different sources
 .logger li.source-server,
 .logger li.receive {
   color: var(--Blue-500);
@@ -99,18 +133,21 @@
   color: var(--Green-500);
 }
 
+// Improved count badge styling
 .logger li .count {
   background-color: var(--Neutral-5);
-  font-size: x-small;
-  padding: 0em 0.6em;
-  padding: 0.3em 0.5em;
-  line-height: 1em;
-  vertical-align: middle;
-  border-radius: 8px;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 12px;
   color: var(--Blue-500);
+  font-weight: 500;
+  letter-spacing: 0.5px;
 }
 
+// Enhanced message styling
 .logger li .message {
   flex-grow: 1;
   color: var(--Neutral-50);
+  word-break: break-word; // Prevent overflow
+  line-height: 1.5; // Better readability
 }

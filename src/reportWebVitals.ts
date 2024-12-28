@@ -1,30 +1,36 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { ReportHandler } from 'web-vitals';
 
-const reportWebVitals = (onPerfEntry?: ReportHandler) => {
-  if (onPerfEntry && onPerfEntry instanceof Function) {
-    import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
-      getCLS(onPerfEntry);
-      getFID(onPerfEntry);
-      getFCP(onPerfEntry);
-      getLCP(onPerfEntry);
-      getTTFB(onPerfEntry);
-    });
+/**
+ * Reports web vital metrics for performance monitoring
+ * 
+ * Metrics reported:
+ * - CLS (Cumulative Layout Shift): Visual stability
+ * - FID (First Input Delay): Interactivity
+ * - FCP (First Contentful Paint): Initial render
+ * - LCP (Largest Contentful Paint): Loading performance
+ * - TTFB (Time to First Byte): Server response time
+ *
+ * @param onPerfEntry Optional callback function to handle the metrics
+ */
+const reportWebVitals = async (onPerfEntry?: ReportHandler): Promise<void> => {
+  try {
+    if (typeof onPerfEntry === 'function') {
+      // Dynamic import for better code splitting
+      const { getCLS, getFID, getFCP, getLCP, getTTFB } = await import('web-vitals');
+      
+      // Initialize all metrics in parallel for better performance
+      Promise.all([
+        getCLS(onPerfEntry),
+        getFID(onPerfEntry), 
+        getFCP(onPerfEntry),
+        getLCP(onPerfEntry),
+        getTTFB(onPerfEntry)
+      ]).catch(error => {
+        console.warn('Failed to report web vitals:', error);
+      });
+    }
+  } catch (error) {
+    console.warn('Failed to load web-vitals:', error);
   }
 };
 

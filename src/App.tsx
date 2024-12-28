@@ -1,72 +1,190 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import "./App.scss";
-import { LiveAPIProvider } from "./contexts/LiveAPIContext";
+import { LiveAPIProvider, useLiveAPIContext } from "./contexts/LiveAPIContext";
 import SidePanel from "./components/side-panel/SidePanel";
-import { Altair } from "./components/altair/Altair";
-import ControlTray from "./components/control-tray/ControlTray";
+import { AppBar } from "./components/app-bar/AppBar";
 import cn from "classnames";
 
-const API_KEY = process.env.REACT_APP_GEMINI_API_KEY as string;
-if (typeof API_KEY !== "string") {
-  throw new Error("set REACT_APP_GEMINI_API_KEY in .env");
+const API_KEY = process.env.REACT_APP_GEMINI_API_KEY || '';
+const MODEL = process.env.REACT_APP_GEMINI_MODEL || 'gemini-2.0-flash-exp';
+
+if (!API_KEY) {
+  throw new Error("Missing REACT_APP_GEMINI_API_KEY in .env file");
 }
 
-const host = "generativelanguage.googleapis.com";
-const uri = `wss://${host}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent`;
-
-function App() {
-  // this video reference is used for displaying the active stream, whether that is the webcam or screen capture
-  // feel free to style as you see fit
+function AppContent() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  // either the screen capture, the video or null, if null we hide it
-  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  const { connected, client, setConfig, config, initializeAudio, connect } = useLiveAPIContext();
+
+  // States for video streaming
+  const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [isMultimodalEnabled, setIsMultimodalEnabled] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false);
+
+  // Initialize connection when needed
+  useEffect(() => {
+    if (!connected) {
+      connect().catch(console.error);
+    }
+  }, [connected, connect]);
+
+  // Keep video srcObject in sync with the active stream
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = screenStream || webcamStream;
+    }
+  }, [screenStream, webcamStream]);
+
+  // Media control handlers
+  const startWebcam = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: isAudioEnabled 
+      });
+      setWebcamStream(stream);
+
+      if (client && isMultimodalEnabled) {
+        client.on('videoStart', (data: any) => {
+          // Handle video start event
+          console.log('Video stream started:', data);
+        });
+
+        if (isAudioEnabled) {
+          client.on('audioStart', (data: any) => {
+            // Handle audio start event
+            console.log('Audio stream started:', data);
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to start webcam:', error);
+    }
+  };
+
+  const stopWebcam = () => {
+    if (webcamStream) {
+      webcamStream.getTracks().forEach(track => track.stop());
+      setWebcamStream(null);
+
+      if (client) {
+        client.off('videoStart');
+        client.off('audioStart');
+      }
+    }
+  };
+
+  const startScreenShare = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ 
+        video: {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: isAudioEnabled
+      });
+      setScreenStream(stream);
+
+      if (client && isMultimodalEnabled) {
+        client.on('videoStart', (data: any) => {
+          // Handle video start event
+          console.log('Screen share started:', data);
+        });
+
+        if (isAudioEnabled) {
+          client.on('audioStart', (data: any) => {
+            // Handle audio start event
+            console.log('Audio stream started:', data);
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to start screen share:', error);
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (screenStream) {
+      screenStream.getTracks().forEach(track => track.stop());
+      setScreenStream(null);
+
+      if (client) {
+        client.off('videoStart');
+        client.off('audioStart');
+      }
+    }
+  };
+
+  const toggleMultimodal = () => {
+    const newValue = !isMultimodalEnabled;
+    setIsMultimodalEnabled(newValue);
+    setConfig({
+      ...config,
+      multimodalEnabled: newValue,
+      model: MODEL,
+      generationConfig: {
+        ...config.generationConfig,
+        responseModalities: newValue ? ["TEXT", "VIDEO", "AUDIO"] : ["TEXT"],
+      }
+    });
+
+    if (newValue && (webcamStream || screenStream)) {
+      initializeAudio();
+    }
+  };
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(!isSidebarCollapsed);
+  };
 
   return (
-    <div className="App">
-      <LiveAPIProvider url={uri} apiKey={API_KEY}>
-        <div className="streaming-console">
-          <SidePanel />
-          <main>
-            <div className="main-app-area">
-              {/* APP goes here */}
-              <Altair />
-              <video
-                className={cn("stream", {
-                  hidden: !videoRef.current || !videoStream,
-                })}
-                ref={videoRef}
-                autoPlay
-                playsInline
-              />
-            </div>
+    <div className="stream">
+      <AppBar
+        onStartWebcam={startWebcam}
+        onStopWebcam={stopWebcam}
+        onStartScreenShare={startScreenShare}
+        onStopScreenShare={stopScreenShare}
+        onToggleMultimodal={toggleMultimodal}
+        onToggleSidebar={toggleSidebar}
+        isMultimodalEnabled={isMultimodalEnabled}
+        webcamStream={webcamStream}
+        screenStream={screenStream}
+      />
 
-            <ControlTray
-              videoRef={videoRef}
-              supportsVideo={true}
-              onVideoStreamChange={setVideoStream}
-            >
-              {/* put your own buttons here */}
-            </ControlTray>
-          </main>
-        </div>
-      </LiveAPIProvider>
+      <div className="video-container">
+        <video
+          ref={videoRef}
+          className={cn("stream", { hidden: !webcamStream && !screenStream })}
+          autoPlay
+          playsInline
+          muted={!isAudioEnabled}
+          aria-label="Live video stream"
+        />
+      </div>
+
+      <SidePanel 
+        hideHeader 
+        multimodalEnabled={isMultimodalEnabled}
+        webcamStream={webcamStream}
+        screenStream={screenStream}
+        onWebcamStreamChange={setWebcamStream}
+        onScreenStreamChange={setScreenStream}
+        isCollapsed={isSidebarCollapsed}
+      />
     </div>
+  );
+}
+
+function App() {
+  return (
+    <LiveAPIProvider apiKey={API_KEY} url="" model={MODEL}>
+      <AppContent />
+    </LiveAPIProvider>
   );
 }
 

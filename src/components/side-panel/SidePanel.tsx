@@ -1,91 +1,175 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import cn from "classnames";
 import { useEffect, useRef, useState } from "react";
-import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "react-icons/ri";
+import cn from "classnames";
 import Select from "react-select";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { useLoggerStore } from "../../lib/store-logger";
 import Logger, { LoggerFilterType } from "../logger/Logger";
 import "./side-panel.scss";
+import { Part as GoogleAIPart } from "@google/generative-ai";
 
+/* Filter options for the logger */
 const filterOptions = [
   { value: "conversations", label: "Conversations" },
   { value: "tools", label: "Tool Use" },
   { value: "none", label: "All" },
 ];
 
-export default function SidePanel() {
-  const { connected, client } = useLiveAPIContext();
-  const [open, setOpen] = useState(true);
-  const loggerRef = useRef<HTMLDivElement>(null);
-  const loggerLastHeightRef = useRef<number>(-1);
-  const { log, logs } = useLoggerStore();
+async function captureVideoFrame(stream: MediaStream): Promise<string | null> {
+  try {
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) {
+      console.warn('No video track available');
+      return null;
+    }
 
+    // Create canvas for frame capture
+    const canvas = document.createElement('canvas');
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    await video.play();
+
+    // Set canvas dimensions to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    // Draw current frame to canvas
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      console.warn('Could not get canvas context');
+      return null;
+    }
+
+    ctx.drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL('image/jpeg', 0.8);
+    
+    // Clean up
+    video.pause();
+    video.srcObject = null;
+
+    return imageData.split(',')[1]; // Remove data URL prefix
+  } catch (error) {
+    console.error('Failed to capture video frame:', error);
+    return null;
+  }
+}
+
+interface SidePanelProps {
+  hideHeader?: boolean;
+  className?: string;
+  multimodalEnabled?: boolean;
+  webcamStream?: MediaStream | null;
+  screenStream?: MediaStream | null;
+  onWebcamStreamChange?: (stream: MediaStream | null) => void;
+  onScreenStreamChange?: (stream: MediaStream | null) => void;
+  isCollapsed?: boolean;
+}
+
+export default function SidePanel({
+  hideHeader = false,
+  className,
+  multimodalEnabled = false,
+  webcamStream = null,
+  screenStream = null,
+  onWebcamStreamChange,
+  onScreenStreamChange,
+  isCollapsed = false,
+}: SidePanelProps) {
+  const { connected, client, connect, setConfig, config } = useLiveAPIContext();
+  const { log } = useLoggerStore();
   const [textInput, setTextInput] = useState("");
+  const loggerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedOption, setSelectedOption] = useState<{
     value: string;
     label: string;
-  } | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  } | null>(filterOptions[2]);
 
-  //scroll the log to the bottom when new logs come in
+  // Register log listener
   useEffect(() => {
-    if (loggerRef.current) {
-      const el = loggerRef.current;
-      const scrollHeight = el.scrollHeight;
-      if (scrollHeight !== loggerLastHeightRef.current) {
-        el.scrollTop = scrollHeight;
-        loggerLastHeightRef.current = scrollHeight;
-      }
+    if (client) {
+      client.on('log', (data: { type: string; content: string; timestamp: string }) => {
+        log({
+          type: data.type,
+          message: data.content,
+          date: new Date(data.timestamp)
+        });
+      });
     }
-  }, [logs]);
-
-  // listen for log events and store them
-  useEffect(() => {
-    client.on("log", log);
-    return () => {
-      client.off("log", log);
-    };
   }, [client, log]);
 
-  const handleSubmit = () => {
-    client.send([{ text: textInput }]);
+  /* Handle sending of text input */
+  const handleSubmit = async (message: string) => {
+    if (!message.trim()) return;
 
-    setTextInput("");
-    if (inputRef.current) {
-      inputRef.current.innerText = "";
+    if (!connected) {
+      try {
+        await connect();
+      } catch (error) {
+        console.error("Failed to connect:", error);
+        return;
+      }
     }
+
+    // Log user message first
+    log({
+      type: "user",
+      message: message,
+      date: new Date()
+    });
+
+    // Create a new turn with the message and video frames if multimodal is enabled
+    const turn: GoogleAIPart = {
+      text: message,
+    };
+
+    if (multimodalEnabled && (webcamStream || screenStream)) {
+      // Capture frames from both streams if available
+      const frames: GoogleAIPart[] = [];
+      
+      if (webcamStream) {
+        const webcamFrame = await captureVideoFrame(webcamStream);
+        if (webcamFrame) {
+          frames.push({
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: webcamFrame
+            }
+          });
+        }
+      }
+
+      if (screenStream) {
+        const screenFrame = await captureVideoFrame(screenStream);
+        if (screenFrame) {
+          frames.push({
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: screenFrame
+            }
+          });
+        }
+      }
+
+      // Send the turn to the API with all parts
+      client?.send([{ text: message }, ...frames]);
+    } else {
+      // Send just the text message
+      client?.send([turn]);
+    }
+
+    // Clear the input
+    setTextInput("");
   };
 
   return (
-    <div className={`side-panel ${open ? "open" : ""}`}>
-      <header className="top">
-        <h2>Console</h2>
-        {open ? (
-          <button className="opener" onClick={() => setOpen(false)}>
-            <RiSidebarFoldLine color="#b4b8bb" />
-          </button>
-        ) : (
-          <button className="opener" onClick={() => setOpen(true)}>
-            <RiSidebarUnfoldLine color="#b4b8bb" />
-          </button>
-        )}
-      </header>
+    <div className={cn("side-panel", className, { collapsed: isCollapsed })}>
+      {!hideHeader && (
+        <header className="side-panel-header">
+          <h2>Logger Console</h2>
+        </header>
+      )}
+
+      {/* Status/Indicators */}
       <section className="indicators">
         <Select
           className="react-select"
@@ -104,55 +188,49 @@ export default function SidePanel() {
               backgroundColor: isFocused
                 ? "var(--Neutral-30)"
                 : isSelected
-                  ? "var(--Neutral-20)"
-                  : undefined,
+                ? "var(--Neutral-20)"
+                : undefined,
             }),
           }}
-          defaultValue={selectedOption}
+          value={selectedOption}
           options={filterOptions}
-          onChange={(e) => {
-            setSelectedOption(e);
-          }}
+          onChange={(option) => setSelectedOption(option)}
         />
+
+        {/* Streaming Indicator */}
         <div className={cn("streaming-indicator", { connected })}>
-          {connected
-            ? `🔵${open ? " Streaming" : ""}`
-            : `⏸️${open ? " Paused" : ""}`}
+          {connected ? (multimodalEnabled ? "🎥 Multimodal" : "🔵 Streaming") : "⏸️ Paused"}
         </div>
       </section>
+
+      {/* Logger Display */}
       <div className="side-panel-container" ref={loggerRef}>
-        <Logger
-          filter={(selectedOption?.value as LoggerFilterType) || "none"}
-        />
+        <Logger filter={(selectedOption?.value as LoggerFilterType) || "none"} />
       </div>
+
+      {/* Input/Send Section */}
       <div className={cn("input-container", { disabled: !connected })}>
         <div className="input-content">
           <textarea
-            className="input-area"
             ref={inputRef}
+            className="input-area"
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                e.stopPropagation();
-                handleSubmit();
+                handleSubmit(textInput);
               }
             }}
-            onChange={(e) => setTextInput(e.target.value)}
-            value={textInput}
-          ></textarea>
-          <span
-            className={cn("input-content-placeholder", {
-              hidden: textInput.length,
-            })}
-          >
-            Type&nbsp;something...
-          </span>
+            placeholder={multimodalEnabled ? "Type something... (Multimodal mode enabled)" : "Type something..."}
+          />
 
-          <button
-            className="send-button material-symbols-outlined filled"
-            onClick={handleSubmit}
+          <button 
+            className="send-button" 
+            onClick={() => handleSubmit(textInput)}
+            disabled={!connected}
           >
-            send
+            <span className="material-symbols-outlined">send</span>
           </button>
         </div>
       </div>

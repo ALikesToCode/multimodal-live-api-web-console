@@ -1,23 +1,23 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 
+/**
+ * Represents the result of using a media stream hook
+ * @typedef {Object} UseMediaStreamResult
+ * @property {'webcam' | 'screen'} type - The type of media stream (webcam or screen sharing)
+ * @property {() => Promise<MediaStream>} start - Async function to start the media stream
+ * @property {() => void} stop - Function to stop the media stream
+ * @property {boolean} isStreaming - Flag indicating if the stream is currently active
+ * @property {MediaStream | null} stream - The current MediaStream object or null if not streaming
+ * @property {Error | null} error - Any error that occurred during streaming operations
+ * @property {boolean} isLoading - Flag indicating if stream initialization is in progress
+ * @property {MediaStreamConstraints} constraints - Current constraints applied to the stream
+ */
 export type UseMediaStreamResult = {
   type: "webcam" | "screen";
   start: () => Promise<MediaStream>;
   stop: () => void;
   isStreaming: boolean;
   stream: MediaStream | null;
+  error: Error | null;
+  isLoading: boolean;
+  constraints: MediaStreamConstraints;
 };

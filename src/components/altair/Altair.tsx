@@ -1,51 +1,51 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 import { type FunctionDeclaration, SchemaType } from "@google/generative-ai";
-import { useEffect, useRef, useState, memo } from "react";
-import vegaEmbed from "vega-embed";
+import { useEffect, useRef, useState, memo, useCallback } from "react";
+import vegaEmbed, { type EmbedOptions } from "vega-embed";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { ToolCall } from "../../multimodal-live-types";
 
+// Define constants to avoid magic strings and improve maintainability
+const ALTAIR_FUNCTION_NAME = "render_altair";
+const DEFAULT_MODEL = "models/gemini-2.0-flash-exp";
+const DEFAULT_VOICE = "Aoede";
+const TOOL_RESPONSE_DELAY = 200;
+
+// Separated function declaration for better organization
 const declaration: FunctionDeclaration = {
-  name: "render_altair",
+  name: ALTAIR_FUNCTION_NAME,
   description: "Displays an altair graph in json format.",
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
       json_graph: {
         type: SchemaType.STRING,
-        description:
-          "JSON STRING representation of the graph to render. Must be a string, not a json object",
+        description: "JSON STRING representation of the graph to render. Must be a string, not a json object",
       },
     },
     required: ["json_graph"],
   },
 };
 
+// Vega embed options for consistent styling
+const vegaEmbedOptions: EmbedOptions = {
+  actions: true, // Enable export and other actions
+  theme: 'ggplot2', // Using a supported theme
+  renderer: 'canvas' // Better performance than SVG for most cases
+};
+
 function AltairComponent() {
   const [jsonString, setJSONString] = useState<string>("");
   const { client, setConfig } = useLiveAPIContext();
+  const embedRef = useRef<HTMLDivElement>(null);
 
+  // Configure the API client
   useEffect(() => {
     setConfig({
-      model: "models/gemini-2.0-flash-exp",
+      model: DEFAULT_MODEL,
       generationConfig: {
         responseModalities: "audio",
         speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: DEFAULT_VOICE } },
         },
       },
       systemInstruction: {
@@ -56,52 +56,66 @@ function AltairComponent() {
         ],
       },
       tools: [
-        // there is a free-tier quota for search
         { googleSearch: {} },
         { functionDeclarations: [declaration] },
       ],
     });
   }, [setConfig]);
 
-  useEffect(() => {
-    const onToolCall = (toolCall: ToolCall) => {
-      console.log(`got toolcall`, toolCall);
-      const fc = toolCall.functionCalls.find(
-        (fc) => fc.name === declaration.name,
-      );
-      if (fc) {
-        const str = (fc.args as any).json_graph;
-        setJSONString(str);
-      }
-      // send data for the response of your tool call
-      // in this case Im just saying it was successful
-      if (toolCall.functionCalls.length) {
-        setTimeout(
-          () =>
-            client.sendToolResponse({
-              functionResponses: toolCall.functionCalls.map((fc) => ({
-                response: { output: { sucess: true } },
-                id: fc.id,
-              })),
-            }),
-          200,
-        );
-      }
-    };
-    client.on("toolcall", onToolCall);
-    return () => {
-      client.off("toolcall", onToolCall);
-    };
+  // Handle tool calls more efficiently with useCallback
+  const handleToolCall = useCallback((toolCall: ToolCall) => {
+    console.log('Tool call received:', toolCall);
+    
+    const functionCall = toolCall.functionCalls.find(
+      (fc) => fc.name === ALTAIR_FUNCTION_NAME
+    );
+
+    if (functionCall) {
+      const graphData = (functionCall.args as { json_graph: string }).json_graph;
+      setJSONString(graphData);
+    }
+
+    if (toolCall.functionCalls.length) {
+      setTimeout(() => {
+        client.sendToolResponse({
+          functionResponses: toolCall.functionCalls.map((fc) => ({
+            response: { output: { success: true }}, // Fixed typo in 'success'
+            id: fc.id,
+          })),
+        });
+      }, TOOL_RESPONSE_DELAY);
+    }
   }, [client]);
 
-  const embedRef = useRef<HTMLDivElement>(null);
-
+  // Set up event listeners
   useEffect(() => {
-    if (embedRef.current && jsonString) {
-      vegaEmbed(embedRef.current, JSON.parse(jsonString));
+    client.on("toolcall", handleToolCall);
+    return () => {
+      client.off("toolcall", handleToolCall);
+    };
+  }, [client, handleToolCall]);
+
+  // Render the visualization
+  useEffect(() => {
+    if (!embedRef.current || !jsonString) return;
+
+    try {
+      const graphData = JSON.parse(jsonString);
+      vegaEmbed(embedRef.current, graphData, vegaEmbedOptions)
+        .catch(error => console.error('Error rendering visualization:', error));
+    } catch (error) {
+      console.error('Error parsing JSON:', error);
     }
-  }, [embedRef, jsonString]);
-  return <div className="vega-embed" ref={embedRef} />;
+  }, [jsonString]);
+
+  return (
+    <div 
+      className="vega-embed" 
+      ref={embedRef}
+      style={{ width: '100%', height: '100%' }} // Ensure responsive sizing
+    />
+  );
 }
 
+// Memoize the component to prevent unnecessary re-renders
 export const Altair = memo(AltairComponent);

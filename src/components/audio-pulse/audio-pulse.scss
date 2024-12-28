@@ -1,51 +1,64 @@
 .audioPulse {
+  // Use flexbox for consistent alignment and spacing
   display: flex;
   width: 24px;
+  height: 4px;
   justify-content: space-evenly;
   align-items: center;
-  transition: all 0.5s;
-
+  
+  // Smooth transitions for state changes
+  transition: all 0.3s ease-in-out;
+  opacity: 0.7; // Default semi-transparent state
+  
+  // Individual pulse bars
   & > div {
     background-color: var(--Neutral-30);
-    border-radius: 1000px;
     width: 4px;
     min-height: 4px;
-    border-radius: 1000px;
-    transition: height 0.1s;
+    border-radius: 100vh; // More semantic than 1000px
+    transition: all 0.2s ease-out;
+    transform-origin: center;
+    will-change: transform; // Optimize animation performance
   }
 
+  // Hover state animation
   &.hover > div {
-    animation: hover 1.4s infinite alternate ease-in-out;
+    animation: hover 1.2s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
+
+    // Add slight delays for wave effect
+    &:nth-child(2) { animation-delay: 0.1s; }
+    &:nth-child(3) { animation-delay: 0.2s; }
   }
 
-  height: 4px;
-  transition: opacity 0.333s;
-
+  // Active state
   &.active {
     opacity: 1;
-
+    
     & > div {
       background-color: var(--Neutral-80);
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.1); // Subtle depth
     }
   }
 }
 
+// Smooth hover animation
 @keyframes hover {
   from {
     transform: translateY(0);
   }
 
   to {
-    transform: translateY(-3.5px);
+    transform: translateY(-4px);
   }
 }
 
+// Pulse animation with easing
 @keyframes pulse {
   from {
-    scale: 1 1;
+    transform: scale(1);
   }
 
   to {
-    scale: 1.2 1.2;
+    transform: scale(1.15);
   }
 }

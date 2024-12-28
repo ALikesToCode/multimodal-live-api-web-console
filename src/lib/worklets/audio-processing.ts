@@ -1,70 +1,89 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
 
 const AudioRecordingWorklet = `
 class AudioProcessingWorklet extends AudioWorkletProcessor {
+  // Buffer size optimized for performance and latency
+  // 2048 samples at 16kHz = ~128ms chunks, balancing processing overhead and responsiveness
+  static BUFFER_SIZE = 2048;
+  static INT16_MAX = 32767;
 
-  // send and clear buffer every 2048 samples, 
-  // which at 16khz is about 8 times a second
-  buffer = new Int16Array(2048);
-
-  // current write index
+  // TypedArray for efficient memory usage and faster processing
+  buffer = new Int16Array(AudioProcessingWorklet.BUFFER_SIZE);
   bufferWriteIndex = 0;
+  
+  // Track if we're receiving audio to optimize processing
+  isReceivingAudio = false;
 
   constructor() {
     super();
-    this.hasAudio = false;
+    // Initialize processor state
+    this.port.onmessage = this.handleMessage.bind(this);
   }
 
   /**
-   * @param inputs Float32Array[][] [input#][channel#][sample#] so to access first inputs 1st channel inputs[0][0]
-   * @param outputs Float32Array[][]
+   * Processes incoming audio data
+   * @param {Float32Array[][]} inputs - Array of inputs, each containing channels of audio data
+   * @param {Float32Array[][]} outputs - Not used in this implementation
+   * @returns {boolean} - Keep processor alive
    */
   process(inputs) {
-    if (inputs[0].length) {
-      const channel0 = inputs[0][0];
-      this.processChunk(channel0);
+    const input = inputs[0];
+    if (input?.length) {
+      this.isReceivingAudio = true;
+      this.processChunk(input[0]);
+    } else if (this.isReceivingAudio) {
+      // Handle end of audio stream
+      this.isReceivingAudio = false;
+      if (this.bufferWriteIndex > 0) {
+        this.sendAndClearBuffer();
+      }
     }
     return true;
   }
 
-  sendAndClearBuffer(){
-    this.port.postMessage({
-      event: "chunk",
-      data: {
-        int16arrayBuffer: this.buffer.slice(0, this.bufferWriteIndex).buffer,
-      },
-    });
-    this.bufferWriteIndex = 0;
+  /**
+   * Sends accumulated buffer to main thread and resets state
+   */
+  sendAndClearBuffer() {
+    // Only send non-empty buffers
+    if (this.bufferWriteIndex > 0) {
+      this.port.postMessage({
+        event: "chunk",
+        data: {
+          int16arrayBuffer: this.buffer.slice(0, this.bufferWriteIndex).buffer,
+        },
+      }, [this.buffer.slice(0, this.bufferWriteIndex).buffer]); // Transfer buffer for better performance
+      
+      this.bufferWriteIndex = 0;
+    }
   }
 
+  /**
+   * Handles messages from main thread
+   */
+  handleMessage(event) {
+    // Extensible message handling
+    console.log('Message received:', event.data);
+  }
+
+  /**
+   * Converts and buffers audio samples
+   * @param {Float32Array} float32Array - Input audio data
+   */
   processChunk(float32Array) {
-    const l = float32Array.length;
+    const length = float32Array.length;
     
-    for (let i = 0; i < l; i++) {
-      // convert float32 -1 to 1 to int16 -32768 to 32767
-      const int16Value = float32Array[i] * 32768;
-      this.buffer[this.bufferWriteIndex++] = int16Value;
-      if(this.bufferWriteIndex >= this.buffer.length) {
+    // Pre-calculate conversion factor for better performance
+    const conversionFactor = AudioProcessingWorklet.INT16_MAX;
+    
+    for (let i = 0; i < length; i++) {
+      // Optimize conversion from float32 [-1,1] to int16 [-32768,32767]
+      // Using Math.round for better accuracy
+      this.buffer[this.bufferWriteIndex++] = Math.round(float32Array[i] * conversionFactor);
+      
+      if (this.bufferWriteIndex >= this.buffer.length) {
         this.sendAndClearBuffer();
       }
-    }
-
-    if(this.bufferWriteIndex >= this.buffer.length) {
-      this.sendAndClearBuffer();
     }
   }
 }

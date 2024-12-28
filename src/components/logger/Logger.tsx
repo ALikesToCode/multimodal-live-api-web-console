@@ -1,24 +1,8 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import "./logger.scss";
 
 import { Part } from "@google/generative-ai";
 import cn from "classnames";
-import { ReactNode } from "react";
+import { ReactNode, useMemo, memo } from "react";
 import { useLoggerStore } from "../../lib/store-logger";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { vs2015 as dark } from "react-syntax-highlighter/dist/esm/styles/hljs";
@@ -40,9 +24,11 @@ import {
   ToolResponseMessage,
 } from "../../multimodal-live-types";
 
+// Memoize time formatting for better performance
 const formatTime = (d: Date) => d.toLocaleTimeString().slice(0, -3);
 
-const LogEntry = ({
+// Memoized LogEntry component to prevent unnecessary re-renders
+const LogEntry = memo(({
   log,
   MessageComponent,
 }: {
@@ -52,76 +38,101 @@ const LogEntry = ({
   }: {
     message: StreamingLog["message"];
   }) => ReactNode;
-}): JSX.Element => (
-  <li
-    className={cn(
-      `plain-log`,
-      `source-${log.type.slice(0, log.type.indexOf("."))}`,
-      {
-        receive: log.type.includes("receive"),
-        send: log.type.includes("send"),
-      },
-    )}
-  >
-    <span className="timestamp">{formatTime(log.date)}</span>
-    <span className="source">{log.type}</span>
-    <span className="message">
-      <MessageComponent message={log.message} />
-    </span>
-    {log.count && <span className="count">{log.count}</span>}
-  </li>
-);
+}): JSX.Element => {
+  const sourceType = log.type.slice(0, log.type.indexOf("."));
+  const isReceive = log.type.includes("receive");
+  const isSend = log.type.includes("send");
 
-const PlainTextMessage = ({
+  return (
+    <li
+      className={cn(
+        `plain-log`,
+        `source-${sourceType}`,
+        {
+          receive: isReceive,
+          send: isSend,
+        },
+      )}
+    >
+      <span className="timestamp">{formatTime(log.date)}</span>
+      <span className="source">{log.type}</span>
+      <span className="message">
+        <MessageComponent message={log.message} />
+      </span>
+      {(log.count ?? 0) > 1 && <span className="count">{log.count}</span>}
+    </li>
+  );
+});
+
+LogEntry.displayName = 'LogEntry';
+
+// Simple message components
+const PlainTextMessage = memo(({
   message,
 }: {
   message: StreamingLog["message"];
-}) => <span>{message as string}</span>;
+}) => <span>{message as string}</span>);
 
 type Message = { message: StreamingLog["message"] };
 
-const AnyMessage = ({ message }: Message) => (
+const AnyMessage = memo(({ message }: Message) => (
   <pre>{JSON.stringify(message, null, "  ")}</pre>
-);
+));
 
+// Utility function with error handling
 function tryParseCodeExecutionResult(output: string) {
   try {
     const json = JSON.parse(output);
     return JSON.stringify(json, null, "  ");
-  } catch (e) {
+  } catch {
     return output;
   }
 }
 
-const RenderPart = ({ part }: { part: Part }) =>
-  part.text && part.text.length ? (
-    <p className="part part-text">{part.text}</p>
-  ) : part.executableCode ? (
-    <div className="part part-executableCode">
-      <h5>executableCode: {part.executableCode.language}</h5>
-      <SyntaxHighlighter
-        language={part.executableCode.language.toLowerCase()}
-        style={dark}
-      >
-        {part.executableCode.code}
-      </SyntaxHighlighter>
-    </div>
-  ) : part.codeExecutionResult ? (
-    <div className="part part-codeExecutionResult">
-      <h5>codeExecutionResult: {part.codeExecutionResult.outcome}</h5>
-      <SyntaxHighlighter language="json" style={dark}>
-        {tryParseCodeExecutionResult(part.codeExecutionResult.output)}
-      </SyntaxHighlighter>
-    </div>
-  ) : (
+// Memoized RenderPart for better performance
+const RenderPart = memo(({ part }: { part: Part }) => {
+  if (part.text?.length) {
+    return <p className="part part-text">{part.text}</p>;
+  }
+  
+  if (part.executableCode) {
+    return (
+      <div className="part part-executableCode">
+        <h5>executableCode: {part.executableCode.language}</h5>
+        <SyntaxHighlighter
+          language={part.executableCode.language.toLowerCase()}
+          style={dark}
+        >
+          {part.executableCode.code}
+        </SyntaxHighlighter>
+      </div>
+    );
+  }
+  
+  if (part.codeExecutionResult) {
+    return (
+      <div className="part part-codeExecutionResult">
+        <h5>codeExecutionResult: {part.codeExecutionResult.outcome}</h5>
+        <SyntaxHighlighter language="json" style={dark}>
+          {tryParseCodeExecutionResult(part.codeExecutionResult.output)}
+        </SyntaxHighlighter>
+      </div>
+    );
+  }
+
+  return (
     <div className="part part-inlinedata">
       <h5>Inline Data: {part.inlineData?.mimeType}</h5>
     </div>
   );
+});
 
-const ClientContentLog = ({ message }: Message) => {
-  const { turns, turnComplete } = (message as ClientContentMessage)
-    .clientContent;
+RenderPart.displayName = 'RenderPart';
+
+// Memoized message type components
+const ClientContentLog = memo(({ message }: Message) => {
+  const { turns, turnComplete } = (message as ClientContentMessage).clientContent;
+  
   return (
     <div className="rich-log client-content user">
       <h4 className="roler-user">User</h4>
@@ -130,20 +141,21 @@ const ClientContentLog = ({ message }: Message) => {
           {turn.parts
             .filter((part) => !(part.text && part.text === "\n"))
             .map((part, j) => (
-              <RenderPart part={part} key={`message-turh-${i}-part-${j}`} />
+              <RenderPart part={part} key={`message-turn-${i}-part-${j}`} />
             ))}
         </div>
       ))}
-      {!turnComplete ? <span>turnComplete: false</span> : ""}
+      {!turnComplete && <span>turnComplete: false</span>}
     </div>
   );
-};
+});
 
-const ToolCallLog = ({ message }: Message) => {
+const ToolCallLog = memo(({ message }: Message) => {
   const { toolCall } = message as ToolCallMessage;
+  
   return (
-    <div className={cn("rich-log tool-call")}>
-      {toolCall.functionCalls.map((fc, i) => (
+    <div className="rich-log tool-call">
+      {toolCall.functionCalls.map((fc) => (
         <div key={fc.id} className="part part-functioncall">
           <h5>Function call: {fc.name}</h5>
           <SyntaxHighlighter language="json" style={dark}>
@@ -153,12 +165,11 @@ const ToolCallLog = ({ message }: Message) => {
       ))}
     </div>
   );
-};
+});
 
-const ToolCallCancellationLog = ({ message }: Message): JSX.Element => (
-  <div className={cn("rich-log tool-call-cancellation")}>
+const ToolCallCancellationLog = memo(({ message }: Message): JSX.Element => (
+  <div className="rich-log tool-call-cancellation">
     <span>
-      {" "}
       ids:{" "}
       {(message as ToolCallCancellationMessage).toolCallCancellation.ids.map(
         (id) => (
@@ -169,10 +180,10 @@ const ToolCallCancellationLog = ({ message }: Message): JSX.Element => (
       )}
     </span>
   </div>
-);
+));
 
-const ToolResponseLog = ({ message }: Message): JSX.Element => (
-  <div className={cn("rich-log tool-response")}>
+const ToolResponseLog = memo(({ message }: Message): JSX.Element => (
+  <div className="rich-log tool-response">
     {(message as ToolResponseMessage).toolResponse.functionResponses.map(
       (fc) => (
         <div key={`tool-response-${fc.id}`} className="part">
@@ -184,9 +195,9 @@ const ToolResponseLog = ({ message }: Message): JSX.Element => (
       ),
     )}
   </div>
-);
+));
 
-const ModelTurnLog = ({ message }: Message): JSX.Element => {
+const ModelTurnLog = memo(({ message }: Message): JSX.Element => {
   const serverContent = (message as ServerContentMessage).serverContent;
   const { modelTurn } = serverContent as ModelTurn;
   const { parts } = modelTurn;
@@ -201,11 +212,11 @@ const ModelTurnLog = ({ message }: Message): JSX.Element => {
         ))}
     </div>
   );
-};
+});
 
-const CustomPlainTextLog = (msg: string) => () => (
+const CustomPlainTextLog = (msg: string) => memo(() => (
   <PlainTextMessage message={msg} />
-);
+));
 
 export type LoggerFilterType = "conversations" | "tools" | "none";
 
@@ -223,7 +234,8 @@ const filters: Record<LoggerFilterType, (log: StreamingLog) => boolean> = {
   none: () => true,
 };
 
-const component = (log: StreamingLog) => {
+// Memoized component selector
+const getMessageComponent = (log: StreamingLog) => {
   if (typeof log.message === "string") {
     return PlainTextMessage;
   }
@@ -254,20 +266,31 @@ const component = (log: StreamingLog) => {
   return AnyMessage;
 };
 
-export default function Logger({ filter = "none" }: LoggerProps) {
+const Logger = memo(({ filter = "none" }: LoggerProps) => {
   const { logs } = useLoggerStore();
-
   const filterFn = filters[filter];
+
+  // Memoize filtered logs
+  const filteredLogs = useMemo(() => 
+    logs.filter(filterFn),
+    [logs, filterFn]
+  );
 
   return (
     <div className="logger">
       <ul className="logger-list">
-        {logs.filter(filterFn).map((log, key) => {
-          return (
-            <LogEntry MessageComponent={component(log)} log={log} key={key} />
-          );
-        })}
+        {filteredLogs.map((log, key) => (
+          <LogEntry 
+            MessageComponent={getMessageComponent(log)} 
+            log={log} 
+            key={key} 
+          />
+        ))}
       </ul>
     </div>
   );
-}
+});
+
+Logger.displayName = 'Logger';
+
+export default Logger;

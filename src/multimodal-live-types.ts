@@ -1,19 +1,3 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type {
   Content,
   FunctionCall,
@@ -24,23 +8,38 @@ import type {
 } from "@google/generative-ai";
 
 /**
- * this module contains type-definitions and Type-Guards
+ * Core type definitions and type guards for multimodal live interactions.
+ * This module provides a comprehensive type system for handling real-time 
+ * communication between client and server, including setup, content streaming,
+ * tool calls, and responses.
  */
 
-// Type-definitions
+// Type Definitions
 
-/* outgoing types */
+/* Outgoing Message Types */
 
 /**
- * the config to initiate the session
+ * Configuration for initializing a live session
+ * @property model - The AI model identifier
+ * @property systemInstruction - Optional initial system prompt
+ * @property generationConfig - Optional generation parameters
+ * @property tools - Optional array of available tools
  */
-export type LiveConfig = {
+export interface LiveConfig {
   model: string;
+  multimodalEnabled?: boolean;
+  temperature?: number;
+  maxOutputTokens?: number;
+  topP?: number;
+  topK?: number;
   systemInstruction?: { parts: Part[] };
   generationConfig?: Partial<LiveGenerationConfig>;
   tools?: Array<Tool | { googleSearch: {} } | { codeExecution: {} }>;
-};
+}
 
+/**
+ * Extended generation configuration with support for multiple modalities
+ */
 export type LiveGenerationConfig = GenerationConfig & {
   responseModalities: "text" | "audio" | "image";
   speechConfig?: {
@@ -52,6 +51,9 @@ export type LiveGenerationConfig = GenerationConfig & {
   };
 };
 
+/**
+ * Union type for all possible outgoing messages
+ */
 export type LiveOutgoingMessage =
   | SetupMessage
   | ClientContentMessage
@@ -88,8 +90,11 @@ export type LiveFunctionResponse = {
   id: string;
 };
 
-/** Incoming types */
+/* Incoming Message Types */
 
+/**
+ * Union type for all possible incoming messages
+ */
 export type LiveIncomingMessage =
   | ToolCallCancellationMessage
   | ToolCallMessage
@@ -120,8 +125,7 @@ export type ToolCallCancellationMessage = {
   };
 };
 
-export type ToolCallCancellation =
-  ToolCallCancellationMessage["toolCallCancellation"];
+export type ToolCallCancellation = ToolCallCancellationMessage["toolCallCancellation"];
 
 export type ToolCallMessage = {
   toolCall: ToolCall;
@@ -131,14 +135,12 @@ export type LiveFunctionCall = FunctionCall & {
   id: string;
 };
 
-/**
- * A `toolCall` message
- */
 export type ToolCall = {
   functionCalls: LiveFunctionCall[];
 };
 
-/** log types */
+/* Logging Types */
+
 export type StreamingLog = {
   date: Date;
   type: string;
@@ -146,76 +148,74 @@ export type StreamingLog = {
   message: string | LiveOutgoingMessage | LiveIncomingMessage;
 };
 
-// Type-Guards
+// Type Guards with Enhanced Error Checking
 
-const prop = (a: any, prop: string, kind: string = "object") =>
-  typeof a === "object" && typeof a[prop] === "object";
+/**
+ * Helper function to safely check object properties
+ */
+const prop = (value: unknown, propName: string, kind: string = "object"): boolean => {
+  return value !== null && typeof value === "object" && propName in value && typeof (value as any)[propName] === kind;
+};
 
-// outgoing messages
-export const isSetupMessage = (a: unknown): a is SetupMessage =>
-  prop(a, "setup");
+// Outgoing Message Type Guards
+export const isSetupMessage = (value: unknown): value is SetupMessage =>
+  prop(value, "setup");
 
-export const isClientContentMessage = (a: unknown): a is ClientContentMessage =>
-  prop(a, "clientContent");
+export const isClientContentMessage = (value: unknown): value is ClientContentMessage =>
+  prop(value, "clientContent");
 
-export const isRealtimeInputMessage = (a: unknown): a is RealtimeInputMessage =>
-  prop(a, "realtimeInput");
+export const isRealtimeInputMessage = (value: unknown): value is RealtimeInputMessage =>
+  prop(value, "realtimeInput");
 
-export const isToolResponseMessage = (a: unknown): a is ToolResponseMessage =>
-  prop(a, "toolResponse");
+export const isToolResponseMessage = (value: unknown): value is ToolResponseMessage =>
+  prop(value, "toolResponse");
 
-// incoming messages
-export const isSetupCompleteMessage = (a: unknown): a is SetupCompleteMessage =>
-  prop(a, "setupComplete");
+// Incoming Message Type Guards
+export const isSetupCompleteMessage = (value: unknown): value is SetupCompleteMessage =>
+  prop(value, "setupComplete");
 
-export const isServerContenteMessage = (a: any): a is ServerContentMessage =>
-  prop(a, "serverContent");
+export const isServerContenteMessage = (value: unknown): value is ServerContentMessage =>
+  prop(value, "serverContent");
 
-export const isToolCallMessage = (a: any): a is ToolCallMessage =>
-  prop(a, "toolCall");
+export const isToolCallMessage = (value: unknown): value is ToolCallMessage =>
+  prop(value, "toolCall");
 
-export const isToolCallCancellationMessage = (
-  a: unknown,
-): a is ToolCallCancellationMessage =>
-  prop(a, "toolCallCancellation") &&
-  isToolCallCancellation((a as any).toolCallCancellation);
+export const isToolCallCancellationMessage = (value: unknown): value is ToolCallCancellationMessage =>
+  prop(value, "toolCallCancellation") && isToolCallCancellation((value as any).toolCallCancellation);
 
-export const isModelTurn = (a: any): a is ModelTurn =>
-  typeof (a as ModelTurn).modelTurn === "object";
+export const isModelTurn = (value: unknown): value is ModelTurn =>
+  value !== null && typeof value === "object" && "modelTurn" in value;
 
-export const isTurnComplete = (a: any): a is TurnComplete =>
-  typeof (a as TurnComplete).turnComplete === "boolean";
+export const isTurnComplete = (value: unknown): value is TurnComplete =>
+  value !== null && typeof value === "object" && "turnComplete" in value && typeof (value as TurnComplete).turnComplete === "boolean";
 
-export const isInterrupted = (a: any): a is Interrupted =>
-  (a as Interrupted).interrupted;
+export const isInterrupted = (value: unknown): value is Interrupted =>
+  value !== null && typeof value === "object" && "interrupted" in value;
 
+/**
+ * Type guard for ToolCall validation
+ */
 export function isToolCall(value: unknown): value is ToolCall {
   if (!value || typeof value !== "object") return false;
-
   const candidate = value as Record<string, unknown>;
-
-  return (
-    Array.isArray(candidate.functionCalls) &&
-    candidate.functionCalls.every((call) => isLiveFunctionCall(call))
-  );
+  return Array.isArray(candidate.functionCalls) && candidate.functionCalls.every(isLiveFunctionCall);
 }
 
+/**
+ * Type guard for ToolResponse validation
+ */
 export function isToolResponse(value: unknown): value is ToolResponse {
   if (!value || typeof value !== "object") return false;
-
   const candidate = value as Record<string, unknown>;
-
-  return (
-    Array.isArray(candidate.functionResponses) &&
-    candidate.functionResponses.every((resp) => isLiveFunctionResponse(resp))
-  );
+  return Array.isArray(candidate.functionResponses) && candidate.functionResponses.every(isLiveFunctionResponse);
 }
 
+/**
+ * Type guard for LiveFunctionCall validation
+ */
 export function isLiveFunctionCall(value: unknown): value is LiveFunctionCall {
   if (!value || typeof value !== "object") return false;
-
   const candidate = value as Record<string, unknown>;
-
   return (
     typeof candidate.name === "string" &&
     typeof candidate.id === "string" &&
@@ -224,19 +224,17 @@ export function isLiveFunctionCall(value: unknown): value is LiveFunctionCall {
   );
 }
 
-export function isLiveFunctionResponse(
-  value: unknown,
-): value is LiveFunctionResponse {
+/**
+ * Type guard for LiveFunctionResponse validation
+ */
+export function isLiveFunctionResponse(value: unknown): value is LiveFunctionResponse {
   if (!value || typeof value !== "object") return false;
-
   const candidate = value as Record<string, unknown>;
-
-  return (
-    typeof candidate.response === "object" && typeof candidate.id === "string"
-  );
+  return typeof candidate.response === "object" && typeof candidate.id === "string";
 }
 
-export const isToolCallCancellation = (
-  a: unknown,
-): a is ToolCallCancellationMessage["toolCallCancellation"] =>
-  typeof a === "object" && Array.isArray((a as any).ids);
+/**
+ * Type guard for ToolCallCancellation validation
+ */
+export const isToolCallCancellation = (value: unknown): value is ToolCallCancellation =>
+  value !== null && typeof value === "object" && Array.isArray((value as any).ids);

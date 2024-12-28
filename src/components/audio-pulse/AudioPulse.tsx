@@ -1,64 +1,79 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import "./audio-pulse.scss";
-import React from "react";
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useMemo, memo } from "react";
 import c from "classnames";
 
-const lineCount = 3;
+// Constants for better maintainability and performance
+const LINE_COUNT = 3;
+const MAX_HEIGHT = 24;
+const BASE_HEIGHT = 4;
+const UPDATE_INTERVAL = 100;
+const ANIMATION_DELAY_FACTOR = 133;
+const MIDDLE_LINE_MULTIPLIER = 400;
+const SIDE_LINE_MULTIPLIER = 60;
 
 export type AudioPulseProps = {
   active: boolean;
-  volume: number;
+  volume: number; // 0-1 range
   hover?: boolean;
 };
 
-export default function AudioPulse({ active, volume, hover }: AudioPulseProps) {
+function AudioPulse({ active, volume, hover }: AudioPulseProps) {
   const lines = useRef<HTMLDivElement[]>([]);
+  
+  // Memoize the line elements array to prevent unnecessary re-renders
+  const lineElements = useMemo(
+    () => Array(LINE_COUNT).fill(null),
+    []
+  );
 
   useEffect(() => {
-    let timeout: number | null = null;
-    const update = () => {
-      lines.current.forEach(
-        (line, i) =>
-        (line.style.height = `${Math.min(
-          24,
-          4 + volume * (i === 1 ? 400 : 60),
-        )}px`),
-      );
-      timeout = window.setTimeout(update, 100);
+    let animationFrameId: number;
+    let isActive = true;
+
+    const updateLines = () => {
+      if (!isActive) return;
+
+      lines.current.forEach((line, i) => {
+        if (!line) return;
+        
+        // Calculate height based on position (middle line is taller)
+        const multiplier = i === 1 ? MIDDLE_LINE_MULTIPLIER : SIDE_LINE_MULTIPLIER;
+        const height = Math.min(
+          MAX_HEIGHT,
+          BASE_HEIGHT + volume * multiplier
+        );
+        
+        line.style.height = `${height}px`;
+      });
+
+      animationFrameId = requestAnimationFrame(updateLines);
     };
 
-    update();
+    updateLines();
 
-    return () => clearTimeout((timeout as number)!);
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(animationFrameId);
+    };
   }, [volume]);
 
   return (
-    <div className={c("audioPulse", { active, hover })}>
-      {Array(lineCount)
-        .fill(null)
-        .map((_, i) => (
-          <div
-            key={i}
-            ref={(el) => (lines.current[i] = el!)}
-            style={{ animationDelay: `${i * 133}ms` }}
-          />
-        ))}
+    <div 
+      className={c("audioPulse", { active, hover })}
+      aria-label="Audio visualization"
+      role="presentation"
+    >
+      {lineElements.map((_, i) => (
+        <div
+          key={i}
+          ref={(el) => (lines.current[i] = el!)}
+          style={{ animationDelay: `${i * ANIMATION_DELAY_FACTOR}ms` }}
+          className="audioPulse__line"
+        />
+      ))}
     </div>
   );
 }
+
+// Prevent unnecessary re-renders if props haven't changed
+export default memo(AudioPulse);

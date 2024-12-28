@@ -1,38 +1,33 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MultimodalLiveAPIClientConnection,
   MultimodalLiveClient,
+  type MultimodalLiveClientEventTypes,
 } from "../lib/multimodal-live-client";
 import { LiveConfig } from "../multimodal-live-types";
 import { AudioStreamer } from "../lib/audio-streamer";
-import { audioContext } from "../lib/utils";
-import VolMeterWorket from "../lib/worklets/vol-meter";
+import { getAudioContext } from "../lib/utils";
+import volMeterWorkletCode from "../lib/worklets/vol-meter";
 
-export type UseLiveAPIResults = {
+// Improved type definition with more specific types and documentation
+export interface UseLiveAPIResults {
+  /** The multimodal client instance */
   client: MultimodalLiveClient;
+  /** Function to update the configuration */
   setConfig: (config: LiveConfig) => void;
+  /** Current configuration */
   config: LiveConfig;
+  /** Connection status */
   connected: boolean;
+  /** Connect to the API */
   connect: () => Promise<void>;
+  /** Disconnect from the API */
   disconnect: () => Promise<void>;
+  /** Current audio volume level */
   volume: number;
-};
+  /** Function to initialize audio */
+  initializeAudio: () => Promise<void>;
+}
 
 export function useLiveAPI({
   url,
@@ -40,77 +35,105 @@ export function useLiveAPI({
 }: MultimodalLiveAPIClientConnection): UseLiveAPIResults {
   const client = useMemo(
     () => new MultimodalLiveClient({ url, apiKey }),
-    [url, apiKey],
+    [url, apiKey]
   );
+
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
+  const audioInitializedRef = useRef(false);
 
-  const [connected, setConnected] = useState(false);
-  const [config, setConfig] = useState<LiveConfig>({
-    model: "models/gemini-2.0-flash-exp",
+  const [state, setState] = useState({
+    connected: false,
+    volume: 0,
+    config: {
+      model: "models/gemini-2.0-flash-exp",
+      multimodalEnabled: false,
+    } as LiveConfig,
   });
-  const [volume, setVolume] = useState(0);
 
-  // register audio for streaming server -> speakers
-  useEffect(() => {
-    if (!audioStreamerRef.current) {
-      audioContext({ id: "audio-out" }).then((audioCtx: AudioContext) => {
-        audioStreamerRef.current = new AudioStreamer(audioCtx);
-        audioStreamerRef.current
-          .addWorklet<any>("vumeter-out", VolMeterWorket, (ev: any) => {
-            setVolume(ev.data.volume);
-          })
-          .then(() => {
-            // Successfully added worklet
-          });
+  const initializeAudio = useCallback(async () => {
+    if (audioStreamerRef.current || audioInitializedRef.current) return;
+    
+    try {
+      const audioCtx = await getAudioContext({ id: "audio-out" });
+      const streamer = new AudioStreamer(audioCtx);
+      await streamer.addWorklet<any>("vumeter-out", volMeterWorkletCode, (ev: any) => {
+        setState(prev => ({ ...prev, volume: ev.data.volume }));
       });
+      audioStreamerRef.current = streamer;
+      audioInitializedRef.current = true;
+    } catch (error) {
+      console.error("Failed to initialize audio:", error);
     }
-  }, [audioStreamerRef]);
+  }, []);
 
+  // Handle client events
   useEffect(() => {
-    const onClose = () => {
-      setConnected(false);
+    const handlers: { [K in keyof MultimodalLiveClientEventTypes]?: MultimodalLiveClientEventTypes[K] } = {
+      close: () => setState(prev => ({ ...prev, connected: false })),
+      interrupted: () => audioStreamerRef.current?.stop(),
+      audio: (data: ArrayBuffer) => {
+        if (!audioStreamerRef.current && !audioInitializedRef.current) {
+          initializeAudio().then(() => {
+            audioStreamerRef.current?.addPCM16(new Uint8Array(data));
+          });
+        } else if (audioStreamerRef.current) {
+          audioStreamerRef.current.addPCM16(new Uint8Array(data));
+        }
+      },
     };
 
-    const stopAudioStreamer = () => audioStreamerRef.current?.stop();
+    // Register event handlers
+    (Object.entries(handlers) as [keyof MultimodalLiveClientEventTypes, Function][])
+      .forEach(([event, handler]) => {
+        client.on(event, handler as any);
+      });
 
-    const onAudio = (data: ArrayBuffer) =>
-      audioStreamerRef.current?.addPCM16(new Uint8Array(data));
-
-    client
-      .on("close", onClose)
-      .on("interrupted", stopAudioStreamer)
-      .on("audio", onAudio);
-
+    // Cleanup event handlers
     return () => {
-      client
-        .off("close", onClose)
-        .off("interrupted", stopAudioStreamer)
-        .off("audio", onAudio);
+      (Object.entries(handlers) as [keyof MultimodalLiveClientEventTypes, Function][])
+        .forEach(([event, handler]) => {
+          client.off(event, handler as any);
+        });
     };
-  }, [client]);
+  }, [client, initializeAudio]);
 
+  // Connection management
   const connect = useCallback(async () => {
-    console.log(config);
-    if (!config) {
-      throw new Error("config has not been set");
+    if (!state.config) {
+      throw new Error("Configuration is required before connecting");
     }
-    client.disconnect();
-    await client.connect(config);
-    setConnected(true);
-  }, [client, setConnected, config]);
+
+    try {
+      client.disconnect(); // Ensure clean state
+      await client.connect(state.config);
+      setState(prev => ({ ...prev, connected: true }));
+    } catch (error) {
+      console.error("Connection failed:", error);
+      throw error;
+    }
+  }, [client, state.config]);
 
   const disconnect = useCallback(async () => {
-    client.disconnect();
-    setConnected(false);
-  }, [setConnected, client]);
+    try {
+      client.disconnect();
+      setState(prev => ({ ...prev, connected: false }));
+    } catch (error) {
+      console.error("Disconnection failed:", error);
+    }
+  }, [client]);
+
+  const setConfig = useCallback((newConfig: LiveConfig) => {
+    setState(prev => ({ ...prev, config: { ...newConfig, model: "models/gemini-2.0-flash-exp" } }));
+  }, []);
 
   return {
     client,
-    config,
+    config: state.config,
     setConfig,
-    connected,
+    connected: state.connected,
     connect,
     disconnect,
-    volume,
+    volume: state.volume,
+    initializeAudio,
   };
 }
